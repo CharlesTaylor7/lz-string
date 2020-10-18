@@ -3,6 +3,8 @@ import Test.Hspec
 import Test.QuickCheck
 import Control.Exception (evaluate)
 
+import qualified LZString as LZ
+
 
 main :: IO ()
 main = hspec $ do

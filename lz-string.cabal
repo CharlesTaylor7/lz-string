@@ -19,18 +19,23 @@ extra-source-files:
   , README.md
   , LICENSE
 
-library
+common common
   default-language:
     Haskell2010
-  exposed-modules:
-    LZString
-  hs-source-dirs:
-    src
   build-depends:
       base >= 4.13 && < 5.0
     , bytestring >= 0.10 && < 1.0
 
+library
+  import:
+    common
+  exposed-modules:
+    LZString
+  hs-source-dirs:
+    src
+
 test-suite test
+  import: common
   default-language:
     Haskell2010
   type:
@@ -38,10 +43,8 @@ test-suite test
   hs-source-dirs:
     test
   main-is:
-    Spec
+    Spec.hs
   build-depends:
-      base >= 4.13 && < 5.0
-    , bytestring >= 0.10 && < 1.0
+      lz-string == 0.0.0.0
     , hspec
-
-
+    , QuickCheck
