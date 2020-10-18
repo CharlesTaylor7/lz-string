@@ -33,6 +33,8 @@ library
     LZString
   hs-source-dirs:
     src
+  build-depends:
+    containers
 
 test-suite test
   import: common
