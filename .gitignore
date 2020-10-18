@@ -1,5 +1,7 @@
 # vim
 *.swp
 
-# cabal build
+# cabal
 /dist-newstyle
+/cabal.project.local
+/cabal.project.local~
