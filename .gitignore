@@ -1,0 +1,5 @@
+# vim
+*.swp
+
+# cabal build
+/dist-newstyle
