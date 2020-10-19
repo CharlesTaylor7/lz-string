@@ -26,7 +26,7 @@ common common
       base >= 4.13 && < 5.0
     , bytestring >= 0.10 && < 1.0
 
-library
+library lib
   import:
     common
   exposed-modules:
@@ -34,19 +34,15 @@ library
   hs-source-dirs:
     src
   build-depends:
-    containers
+      containers
+    , array
 
-test-suite test
-  import: common
-  default-language:
-    Haskell2010
-  type:
-    exitcode-stdio-1.0
-  hs-source-dirs:
-    test
+
+executable lz
+  import:
+    common
   main-is:
-    Spec.hs
+    Main.hs
   build-depends:
-      lz-string == 0.0.0.0
-    , hspec
-    , QuickCheck
+      base64-bytestring
+    , lib
