@@ -4,7 +4,7 @@
 const [url] = process.argv.slice(2);
 
 const fetch = require('fetch-base64');
-const LZString = require('lz-string');
+const LZString = require(./'lz-string');
 
 
 fetch.auto(url)
