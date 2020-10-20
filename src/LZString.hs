@@ -9,7 +9,7 @@ module LZString
 import Data.Function ((&), on)
 import Data.Traversable (for)
 import Data.Foldable (foldlM)
-import Data.Word (Word8)
+import Data.Word (Word8, Word16)
 import Data.Bits (Bits(..))
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Control.Applicative (liftA2)
@@ -116,12 +116,14 @@ _decompressImpl (length, resetValue, getNextValue) =
           0 -> 8
           1 -> 16
           2 -> error "bits == 2"
-    bits <- getBits' exponent
-    liftIO $ print bits
     c <- getBits' exponent
-    liftIO $ print c
     let
-      w = BS_Char8.singleton $ c
+      truncated = fromIntegral c
+      w = BS.singleton truncated
+
+    if c > fromIntegral (maxBound :: Word8)
+    then liftIO $ putStrLn $ "truncating " <> show c <> " to " <> show truncated
+    else pure ()
 
     -- refs
     dictionaryRef <- newRef $ Map.fromList
@@ -148,13 +150,12 @@ _decompressImpl (length, resetValue, getNextValue) =
 
 type Exponent = Int
 
-getBits :: forall m. MonadState DataStruct m => ResetValue -> GetNextValue -> Exponent -> m Int
+getBits :: forall m. MonadState DataStruct m => ResetValue -> GetNextValue -> Exponent -> m Word16
 getBits resetValue getNextValue max = foldlM reducer 0 [0..(max-1)]
   where
-    reducer :: BitPattern -> Exponent -> m BitPattern
     reducer bits n = do
 
-      -- read current values
+    -- read current values
       DataStruct val pos index <- get
 
       -- advance enumerator
@@ -167,7 +168,7 @@ getBits resetValue getNextValue max = foldlM reducer 0 [0..(max-1)]
 
       -- apply new bit
       let
-        power = 1 `shiftL` n :: Int
+        power = 1 `shiftL` n
         resultBit = if val .&. pos > 0 then 1 else 0
 
       pure $ bits .|. resultBit * power
