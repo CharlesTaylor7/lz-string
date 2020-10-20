@@ -399,7 +399,6 @@ var LZString = {
     }
     dictionary[3] = c;
     w = c;
-    return c
     result.push(c);
     while (true) {
       if (data.index > length) {
