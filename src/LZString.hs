@@ -1,14 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
 module LZString (decompressBase64) where
 
 import Data.Function ((&), on)
 import Data.Traversable (for)
+import Data.Foldable (foldlM)
 import Data.Word (Word8)
 import Data.Bits (Bits(..))
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Control.Applicative (liftA2)
 import Control.Monad (when)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.State (MonadState, State(..), get, put, modify, evalStateT, lift)
 
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -54,68 +58,71 @@ type ResetValue = Int
 type GetNextValue = Int -> Int
 
 
-while :: m Bool -> m ()
-while act = do
-  b <- act
-  when b $
-    while act
+data DataStruct = DataStruct
+  { _val :: Int
+  , _position :: Int
+  , _index :: Int
+  }
 
 
-{-# NOINLINE _decompress #-}
 _decompress :: (Length, ResetValue, GetNextValue) -> ByteString
-_decompress (length, resetValue, getNextValue) = unsafePerformIO $ do
-  dictionaryRef <- newIORef (mempty :: IntMap ByteString)
-  nextRef <- newIORef (0 :: Int)
-  enlargeInRef <- newIORef (4 :: Int)
-  dictSizeRef <- newIORef (4 :: Int)
-  numBitsRef <- newIORef (3 :: Int)
-  iRef <- newIORef (0 :: Int)
-  bitsRef <- newIORef (0 :: Int)
-  resbRef <- newIORef (0 :: Int)
-  maxpowerRef <- newIORef (0 :: Int)
-  powerRef <- newIORef (0 :: Int)
-  cRef <- newIORef (0 :: Int)
-  entryRef <- newIORef ("" :: ByteString)
-  wRef <- newIORef (Nothing :: Maybe ByteString)
-  resultRef <- newIORef ("" :: ByteString)
-  data_val <- newIORef $ getNextValue 0
-  data_position <- newIORef $ resetValue
-  data_index <- newIORef $ 1
+_decompress args = unsafePerformIO $ _decompressImpl args
+{-# NOINLINE _decompress #-}
 
-  for [0..2] $ \i -> do
-    modifyIORef' dictionary $
-      Map.insert i $ BS.singleton (toEnum i)
+newRef = lift . newIORef
 
-  writeIORef maxpower 4
-  writeIORef power 1
-
+_decompressImpl :: (Length, ResetValue, GetNextValue) -> IO ByteString
+_decompressImpl (length, resetValue, getNextValue) =
   let
-    powersNotEqual :: IO Bool
-    powersNotEqual = do
-      p <- readIOref power
-      m <- readIORef maxpower
-      pure $ m /= p
+    dataStruct = DataStruct
+      { _val = getNextValue 0
+      , _position = resetValue
+      , _index = 1
+      }
 
-  while powersNotEqual $ do
-    val <- readIORef data_val
-    pos <- readIORef data_position
-    writeIORef resb $ val .&. pos
+  in flip evalStateT dataStruct $ do
+    dictionaryRef <- newRef (mempty :: IntMap ByteString)
+    enlargeInRef <- newRef (4 :: Int)
+    dictSizeRef <- newRef (4 :: Int)
+    numBitsRef <- newRef (3 :: Int)
+    iRef <- newRef (0 :: Int)
+    cRef <- newRef (0 :: Int)
+    entryRef <- newRef ("" :: ByteString)
+    wRef <- newRef (Nothing :: Maybe ByteString)
+    resultRef <- newRef ("" :: ByteString)
 
-    let pos' = pos `shiftR` 1
-    writeIORef data_position pos'
-    when (pos' == 0) $ do
-      writeIORef data_position resetValue
+    liftIO $ for [0..2] $ \i -> do
+      modifyIORef' dictionaryRef $
+        Map.insert i $ BS.singleton (toEnum i)
 
-      -- these three lines are 1 line in the original source
-      -- assignment with postfix increment is pretty complex
-      index <- readIORef data_index
-      writeIORef data_val $ getNextValue index
-      writeIORef data_index $ index + 1
+    bits <- getBits resetValue getNextValue 2
 
-    resb' <-
-    modifyIORef bits $ (.|.)
-
-  pure undefined
+    pure undefined
 
 
+type Exponent = Int
+type BitPattern = Int
 
+getBits :: forall m. MonadState DataStruct m => ResetValue -> GetNextValue -> Exponent -> m BitPattern
+getBits resetValue getNextValue max = foldlM reducer 0 [0..(max-1)]
+  where
+    reducer :: BitPattern -> Exponent -> m BitPattern
+    reducer bits n = do
+
+      -- read current values
+      DataStruct val pos index <- get
+
+      -- advance enumerator
+      let pos' = pos `shiftR` 1
+      put $
+        if pos' /= 0
+        then DataStruct val pos' index
+        else DataStruct (getNextValue index) resetValue (index + 1)
+
+
+      -- apply new bit
+      let
+        power = 1 `shiftL` n :: Int
+        resultBit = if val .&. pos > 0 then 1 else 0
+
+      pure $ bits .|. resultBit * power

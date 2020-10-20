@@ -36,6 +36,7 @@ library lib
   build-depends:
       containers
     , array
+    , mtl
 
 
 executable lz
