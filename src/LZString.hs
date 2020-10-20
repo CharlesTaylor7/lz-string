@@ -14,8 +14,8 @@ import Data.Bits (Bits(..))
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Control.Applicative (liftA2)
 import Control.Monad (when)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad.State (MonadState, StateT, get, put, modify, evalStateT, lift)
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.State (MonadState, StateT, get, gets, put, modify, evalStateT, lift)
 import Control.Monad.Except (MonadError, ExceptT, runExceptT, throwError)
 import Control.Monad.Writer (MonadWriter, WriterT, execWriterT)
 
@@ -74,7 +74,14 @@ _decompress :: (Length, ResetValue, GetNextValue) -> ByteString
 _decompress args = unsafePerformIO $ _decompressImpl args
 {-# NOINLINE _decompress #-}
 
-newRef = lift . newIORef
+newRef :: MonadIO m => a -> m (IORef a)
+newRef = liftIO . newIORef
+
+readRef :: MonadIO m => IORef a -> m a
+readRef = liftIO . readIORef
+
+writeRef :: MonadIO m => IORef a  -> a -> m ()
+writeRef = (liftIO .) . writeIORef
 
 while :: Monad m => m Bool -> m ()
 while act = do
@@ -100,7 +107,9 @@ loopM act x = do
 _decompressImpl :: (Length, ResetValue, GetNextValue) -> IO ByteString
 _decompressImpl (length, resetValue, getNextValue) =
   let
+    getBits' :: MonadState DataStruct m => Int -> m Int
     getBits' = getBits resetValue getNextValue
+
     dataStruct = DataStruct
       { _val = getNextValue 0
       , _position = resetValue
@@ -137,12 +146,27 @@ _decompressImpl (length, resetValue, getNextValue) =
     numBitsRef <- newRef (3 :: Int)
     wRef <- newRef (w :: ByteString)
     iRef <- newRef (0 :: Int)
-    cRef <- newRef (0 :: Int)
+    cRef <- newRef c
     entryRef <- newRef ("" :: ByteString)
 
     -- loop
-    result <- execWriterT $ while $
-      pure False
+    result <- execWriterT $ while $ do
+      data_index <- gets _index
+      if data_index > length
+      then pure False
+      else do
+        numBits <- readRef numBitsRef
+        bits <- getBits' numBits
+        writeRef cRef bits
+        let
+          exponent =
+            case bits of
+              0 -> pure 8
+              1 -> pure 16
+              2 -> error "bits == 2"
+
+
+        pure False
 
     -- prepend initial word & return
     pure $ w <> result
@@ -150,7 +174,7 @@ _decompressImpl (length, resetValue, getNextValue) =
 
 type Exponent = Int
 
-getBits :: forall m. MonadState DataStruct m => ResetValue -> GetNextValue -> Exponent -> m Word16
+getBits :: forall m. MonadState DataStruct m => ResetValue -> GetNextValue -> Exponent -> m Int
 getBits resetValue getNextValue max = foldlM reducer 0 [0..(max-1)]
   where
     reducer bits n = do
