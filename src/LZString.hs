@@ -47,8 +47,6 @@ reverseLookup =
 getBaseValue :: Char -> Int
 getBaseValue = (reverseLookup Map.!) . fromEnum
 
-f :: Int -> Char
-f = toEnum
 
 decompressBase64 :: ByteString -> ByteString
 decompressBase64 input = _decompress(BS.length input, 32, getNextValue)
@@ -118,8 +116,10 @@ _decompressImpl (length, resetValue, getNextValue) =
           0 -> 8
           1 -> 16
           2 -> error "bits == 2"
-
-    c <- f <$> getBits' exponent
+    bits <- getBits' exponent
+    liftIO $ print bits
+    c <- getBits' exponent
+    liftIO $ print c
     let
       w = BS_Char8.singleton $ c
 
@@ -147,9 +147,8 @@ _decompressImpl (length, resetValue, getNextValue) =
 
 
 type Exponent = Int
-type BitPattern = Int
 
-getBits :: forall m. MonadState DataStruct m => ResetValue -> GetNextValue -> Exponent -> m BitPattern
+getBits :: forall m. MonadState DataStruct m => ResetValue -> GetNextValue -> Exponent -> m Int
 getBits resetValue getNextValue max = foldlM reducer 0 [0..(max-1)]
   where
     reducer :: BitPattern -> Exponent -> m BitPattern
