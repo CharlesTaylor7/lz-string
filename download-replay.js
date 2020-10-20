@@ -1,18 +1,12 @@
 #! /usr/bin/env node
 
 // arg: url of a replay
-const [url] = process.argv.slice(2);
+const filePath = './rtQyMFIwv.gior'
 
-const fetch = require('fetch-base64');
-const LZString = require(./'lz-string');
+const fs = require('fs')
+const LZString = require('./lz-string');
 
+const base64 = fs.readFileSync(filePath, 'base64')
+const decompressed = LZString.decompressFromBase64(base64);
 
-fetch.auto(url)
-  .then(data => {
-    const [base64] = data
-
-    const decompressed = LZString.decompressFromBase64(base64);
-    process.stdout.write(decompressed.slice(0, 4));
-  })
-  .catch(console.error)
-
+process.stdout.write(decompressed.slice(0, 4));
