@@ -1,7 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
-module LZString (decompressBase64) where
+{-# LANGUAGE PartialTypeSignatures #-}
+module LZString
+  -- (decompressBase64)
+  where
 
 import Data.Function ((&), on)
 import Data.Traversable (for)
@@ -12,12 +15,16 @@ import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Control.Applicative (liftA2)
 import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.State (MonadState, State(..), get, put, modify, evalStateT, lift)
+import Control.Monad.State (MonadState, StateT, get, put, modify, evalStateT, lift)
+import Control.Monad.Except (MonadError, ExceptT, runExceptT, throwError)
+import Control.Monad.Writer (MonadWriter, WriterT, execWriterT)
 
 import System.IO.Unsafe (unsafePerformIO)
 
 import Data.ByteString (ByteString)
+import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BS_Char8
 
 -- Use an Intmap to mimic a js array
 import Data.IntMap (IntMap)
@@ -71,33 +78,72 @@ _decompress args = unsafePerformIO $ _decompressImpl args
 
 newRef = lift . newIORef
 
+while :: Monad m => m Bool -> m ()
+while act = do
+  result <- act
+  case result of
+    False -> pure ()
+    True -> while act
+
+loopMaybe :: Monad m => m (Maybe a) -> m a
+loopMaybe act = do
+  result <- act
+  case result of
+    Just e -> pure e
+    Nothing -> loopMaybe act
+
+loopM :: Monad m => (a -> ExceptT e m a) -> a -> m e
+loopM act x = do
+  result <- runExceptT $ act x
+  case result of
+    Left e -> pure e
+    Right a -> loopM act a
+
 _decompressImpl :: (Length, ResetValue, GetNextValue) -> IO ByteString
 _decompressImpl (length, resetValue, getNextValue) =
   let
+    getBits' = getBits resetValue getNextValue
     dataStruct = DataStruct
       { _val = getNextValue 0
       , _position = resetValue
       , _index = 1
       }
-
   in flip evalStateT dataStruct $ do
-    dictionaryRef <- newRef (mempty :: IntMap ByteString)
+
+    bits <- getBits' 2
+
+    let
+      exponent =
+        case bits of
+          0 -> 8
+          1 -> 16
+          2 -> error "bits == 2"
+
+    c <- f <$> getBits' exponent
+    let
+      w = BS_Char8.singleton $ c
+
+    -- refs
+    dictionaryRef <- newRef $ Map.fromList
+      [ (0, BS.singleton $ toEnum 0)
+      , (1, BS.singleton $ toEnum 1)
+      , (2, BS.singleton $ toEnum 2)
+      , (3, w)
+      ]
     enlargeInRef <- newRef (4 :: Int)
     dictSizeRef <- newRef (4 :: Int)
     numBitsRef <- newRef (3 :: Int)
+    wRef <- newRef (w :: ByteString)
     iRef <- newRef (0 :: Int)
     cRef <- newRef (0 :: Int)
     entryRef <- newRef ("" :: ByteString)
-    wRef <- newRef (Nothing :: Maybe ByteString)
-    resultRef <- newRef ("" :: ByteString)
 
-    liftIO $ for [0..2] $ \i -> do
-      modifyIORef' dictionaryRef $
-        Map.insert i $ BS.singleton (toEnum i)
+    -- loop
+    result <- execWriterT $ while $
+      pure False
 
-    bits <- getBits resetValue getNextValue 2
-
-    pure undefined
+    -- prepend initial word & return
+    pure $ w <> result
 
 
 type Exponent = Int
