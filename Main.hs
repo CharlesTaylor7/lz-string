@@ -4,10 +4,13 @@ import System.IO
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as Base64
 
+import qualified LZString as LZ
 
 main :: IO ()
 main = do
   handle <- openFile "../generals-bot/replays/rtQyMFIwv.gior" ReadMode
-  contents <- BS.hGetContents handle
+  contents <- Base64.encode <$> BS.hGetContents handle
 
-  print $ BS.take 3 $ Base64.encode contents
+  let decompressed = LZ.decompressBase64 contents
+
+  print decompressed

@@ -2,7 +2,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE TypeApplications #-}
 module LZString
   -- (decompressBase64)
   where
@@ -190,26 +189,27 @@ _decompressImpl (length, resetValue, getNextValue) =
 
       numBits <- readRef numBitsRef
       bits <- getBits' numBits
+      -- assignment in switch case of line 423
       writeRef cRef bits
 
+      -- switch case 2
       when (bits == 2) $
         break
 
-      let
-        exponent =
-          case bits of
-            0 -> 8
-            1 -> 16
+      -- switch case 0, 1
+      -- line 423
+      when (bits < 2) $ do
+        let exponent = (bits + 1) * 8
 
-      bits <- getBits' exponent
-      dictSize <- incrementRef dictSizeRef
-      modifyRef dictionaryRef $
-        Map.insert dictSize (f bits)
+        bits <- getBits' exponent
+        dictSize <- incrementRef dictSizeRef
+        modifyRef dictionaryRef $
+          Map.insert dictSize (f bits)
 
-      -- Line 457 in lz-string.js
-      writeRef cRef $ dictSize - 1
+        -- Line 457 in lz-string.js
+        writeRef cRef $ dictSize - 1
 
-      tickEnlargeIn enlargeInRef numBitsRef
+        tickEnlargeIn enlargeInRef numBitsRef
 
       -- line 469
       c <- readRef cRef

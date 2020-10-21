@@ -6,7 +6,7 @@ const filePath = './rtQyMFIwv.gior'
 const fs = require('fs')
 const LZString = require('./lz-string');
 
-const base64 = fs.readFileSync(filePath, 'base64')
+let base64 = fs.readFileSync(filePath, 'base64')
 const decompressed = LZString.decompressFromBase64(base64);
 
 // show your work
