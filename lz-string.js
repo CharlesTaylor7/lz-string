@@ -397,10 +397,8 @@ var LZString = {
       case 2:
         return "";
     }
-    console.log('bits', bits)
     dictionary[3] = c;
     w = c;
-    console.log('c', c)
     result.push(c);
     while (true) {
       if (data.index > length) {

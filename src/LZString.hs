@@ -2,10 +2,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE TypeApplications #-}
 module LZString
   -- (decompressBase64)
   where
 
+import Prelude hiding (break)
 import Data.Function ((&), on)
 import Data.Traversable (for)
 import Data.Foldable (foldlM)
@@ -17,7 +19,7 @@ import Control.Monad (when)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.State (MonadState, StateT, get, gets, put, modify, evalStateT, lift)
 import Control.Monad.Except (MonadError, ExceptT, runExceptT, throwError)
-import Control.Monad.Writer (MonadWriter, WriterT, execWriterT)
+import Control.Monad.Writer (MonadWriter, WriterT, execWriterT, tell)
 
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -48,7 +50,7 @@ getBaseValue :: Char -> Int
 getBaseValue = (reverseLookup Map.!) . fromEnum
 
 
-decompressBase64 :: ByteString -> ByteString
+decompressBase64 :: ByteString -> Decompressed
 decompressBase64 input = _decompress(BS.length input, 32, getNextValue)
   where
     toChar :: Word8 -> Char
@@ -61,7 +63,7 @@ decompressBase64 input = _decompress(BS.length input, 32, getNextValue)
 type Length = Int
 type ResetValue = Int
 type GetNextValue = Int -> Int
-
+type Decompressed = String
 
 data DataStruct = DataStruct
   { _val :: Int
@@ -70,7 +72,7 @@ data DataStruct = DataStruct
   }
 
 
-_decompress :: (Length, ResetValue, GetNextValue) -> ByteString
+_decompress :: (Length, ResetValue, GetNextValue) -> Decompressed
 _decompress args = unsafePerformIO $ _decompressImpl args
 {-# NOINLINE _decompress #-}
 
@@ -82,6 +84,28 @@ readRef = liftIO . readIORef
 
 writeRef :: MonadIO m => IORef a  -> a -> m ()
 writeRef = (liftIO .) . writeIORef
+
+modifyRef :: MonadIO m => IORef a -> (a -> a) -> m ()
+modifyRef = (liftIO .) . modifyIORef'
+
+
+
+
+-- | C-style language postfix ++ operator
+-- increment the ref, but return the old value
+incrementRef :: MonadIO m => IORef Int -> m Int
+incrementRef ref = liftIO $ do
+  i <- readIORef ref
+  writeIORef ref $ i + 1
+  pure i
+
+-- | C-style language postfix -- operator
+-- decrement the ref, but return the old value
+decrementRef :: MonadIO m => IORef Int -> m Int
+decrementRef ref = liftIO $ do
+  i <- readIORef ref
+  writeIORef ref $ i - 1
+  pure i
 
 while :: Monad m => m Bool -> m ()
 while act = do
@@ -97,6 +121,14 @@ loopMaybe act = do
     Just e -> pure e
     Nothing -> loopMaybe act
 
+loop :: forall e m. Monad m => ExceptT e m () -> m e
+loop act = do
+  result <- runExceptT act
+  case result of
+    Left e -> pure e
+    Right _ -> loop act
+
+
 loopM :: Monad m => (a -> ExceptT e m a) -> a -> m e
 loopM act x = do
   result <- runExceptT $ act x
@@ -104,7 +136,13 @@ loopM act x = do
     Left e -> pure e
     Right a -> loopM act a
 
-_decompressImpl :: (Length, ResetValue, GetNextValue) -> IO ByteString
+break :: MonadError () m => m a
+break = throwError ()
+
+f :: Int -> String
+f = pure . toEnum
+
+_decompressImpl :: (Length, ResetValue, GetNextValue) -> IO Decompressed
 _decompressImpl (length, resetValue, getNextValue) =
   let
     getBits' :: MonadState DataStruct m => Int -> m Int
@@ -127,49 +165,87 @@ _decompressImpl (length, resetValue, getNextValue) =
           2 -> error "bits == 2"
     c <- getBits' exponent
     let
-      truncated = fromIntegral c
-      w = BS.singleton truncated
-
-    if c > fromIntegral (maxBound :: Word8)
-    then liftIO $ putStrLn $ "truncating " <> show c <> " to " <> show truncated
-    else pure ()
+      w = f c
 
     -- refs
     dictionaryRef <- newRef $ Map.fromList
-      [ (0, BS.singleton $ toEnum 0)
-      , (1, BS.singleton $ toEnum 1)
-      , (2, BS.singleton $ toEnum 2)
+      [ (0, f 0)
+      , (1, f 1)
+      , (2, f 2)
       , (3, w)
       ]
     enlargeInRef <- newRef (4 :: Int)
     dictSizeRef <- newRef (4 :: Int)
     numBitsRef <- newRef (3 :: Int)
-    wRef <- newRef (w :: ByteString)
+    wRef <- newRef (w :: Decompressed)
     iRef <- newRef (0 :: Int)
     cRef <- newRef c
-    entryRef <- newRef ("" :: ByteString)
+    entryRef <- newRef ("" :: Decompressed)
 
     -- loop
-    result <- execWriterT $ while $ do
+    result <- execWriterT $ loop $ do
       data_index <- gets _index
-      if data_index > length
-      then pure False
-      else do
-        numBits <- readRef numBitsRef
-        bits <- getBits' numBits
-        writeRef cRef bits
-        let
-          exponent =
-            case bits of
-              0 -> pure 8
-              1 -> pure 16
-              2 -> error "bits == 2"
+      when (data_index > length) $
+        break
 
+      numBits <- readRef numBitsRef
+      bits <- getBits' numBits
+      writeRef cRef bits
 
-        pure False
+      when (bits == 2) $
+        break
+
+      let
+        exponent =
+          case bits of
+            0 -> 8
+            1 -> 16
+
+      bits <- getBits' exponent
+      dictSize <- incrementRef dictSizeRef
+      modifyRef dictionaryRef $
+        Map.insert dictSize (f bits)
+
+      -- Line 457 in lz-string.js
+      writeRef cRef $ dictSize - 1
+
+      tickEnlargeIn enlargeInRef numBitsRef
+
+      -- line 469
+      c <- readRef cRef
+      dictSize <- readRef dictSizeRef
+      dictionary <- readRef dictionaryRef
+      w <- readRef wRef
+      let
+        entry =
+          case dictionary Map.!? c of
+            Just val -> val
+            Nothing ->
+              if c == dictSize
+              then w <> [(w !! 0)]
+              else
+                error "return null"
+
+      tell entry
+
+      dictSize <- incrementRef dictSizeRef
+      modifyRef dictionaryRef $
+        Map.insert dictSize (w <> [entry !! 0])
+
+      writeRef wRef entry
+      tickEnlargeIn enlargeInRef numBitsRef
 
     -- prepend initial word & return
     pure $ w <> result
+
+
+tickEnlargeIn :: MonadIO m => IORef Int -> IORef Int -> m ()
+tickEnlargeIn enlargeInRef numBitsRef = do
+  enlargeIn <- decrementRef enlargeInRef
+
+  when (enlargeIn == 1) $ do
+    numBits <- incrementRef numBitsRef
+    writeRef enlargeInRef $ (1 `shiftL` numBits)
 
 
 type Exponent = Int
