@@ -13,5 +13,4 @@ main = do
 
   let decompressed = LZ.decompressBase64 contents
 
-  print $ BS.take 4 contents
-  print $ take 4 decompressed
+  print $ decompressed `seq` ()

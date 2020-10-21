@@ -10,7 +10,12 @@
 var LZString = (function() {
 
 // private property
-var f = String.fromCharCode;
+var f = function (n) {
+  c = String.fromCharCode(n)
+  console.log(c)
+  return c
+}
+
 var keyStrBase64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
 var keyStrUriSafe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-$";
 var baseReverseDic = {};
@@ -418,7 +423,6 @@ var LZString = {
         bits |= (resb>0 ? 1 : 0) * power;
         power <<= 1;
       }
-      console.log("bits", bits)
 
       switch (c = bits) {
         case 0:

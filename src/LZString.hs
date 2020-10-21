@@ -18,9 +18,10 @@ import Control.Monad (when)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.State (MonadState, StateT, get, gets, put, modify, evalStateT, lift)
 import Control.Monad.Except (MonadError, ExceptT, runExceptT, throwError)
-import Control.Monad.Writer (MonadWriter, WriterT, execWriterT, tell)
+import Control.Monad.Writer.Strict (MonadWriter, WriterT, execWriterT, tell)
 
 import System.IO.Unsafe (unsafePerformIO)
+import Debug.Trace (traceId)
 
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
@@ -87,9 +88,6 @@ writeRef = (liftIO .) . writeIORef
 modifyRef :: MonadIO m => IORef a -> (a -> a) -> m ()
 modifyRef = (liftIO .) . modifyIORef'
 
-
-
-
 -- | C-style language postfix ++ operator
 -- increment the ref, but return the old value
 incrementRef :: MonadIO m => IORef Int -> m Int
@@ -106,20 +104,6 @@ decrementRef ref = liftIO $ do
   writeIORef ref $ i - 1
   pure i
 
-while :: Monad m => m Bool -> m ()
-while act = do
-  result <- act
-  case result of
-    False -> pure ()
-    True -> while act
-
-loopMaybe :: Monad m => m (Maybe a) -> m a
-loopMaybe act = do
-  result <- act
-  case result of
-    Just e -> pure e
-    Nothing -> loopMaybe act
-
 loop :: forall e m. Monad m => ExceptT e m () -> m e
 loop act = do
   result <- runExceptT act
@@ -128,18 +112,11 @@ loop act = do
     Right _ -> loop act
 
 
-loopM :: Monad m => (a -> ExceptT e m a) -> a -> m e
-loopM act x = do
-  result <- runExceptT $ act x
-  case result of
-    Left e -> pure e
-    Right a -> loopM act a
-
 break :: MonadError () m => m a
 break = throwError ()
 
 f :: Int -> String
-f = pure . toEnum
+f = traceId . pure . toEnum
 
 _decompressImpl :: (Length, ResetValue, GetNextValue) -> IO Decompressed
 _decompressImpl (length, resetValue, getNextValue) =
@@ -189,6 +166,7 @@ _decompressImpl (length, resetValue, getNextValue) =
 
       numBits <- readRef numBitsRef
       bits <- getBits' numBits
+
       -- assignment in switch case of line 423
       writeRef cRef bits
 
