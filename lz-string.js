@@ -400,6 +400,7 @@ var LZString = {
     dictionary[3] = c;
     w = c;
     result.push(c);
+    console.log('w', w)
     while (true) {
       if (data.index > length) {
         return "";
@@ -475,7 +476,8 @@ var LZString = {
           return null;
         }
       }
-      console.log(entry)
+      console.log('entry', entry)
+      process.exit(1)
       result.push(entry);
 
       // Add w+entry[0] to the dictionary.

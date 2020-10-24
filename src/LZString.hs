@@ -23,7 +23,6 @@ import Control.Monad.Except (MonadError, ExceptT, runExceptT, throwError)
 import Control.Monad.Writer.Strict (MonadWriter, WriterT, execWriterT, tell)
 
 import System.IO.Unsafe (unsafePerformIO)
-import Debug.Trace (traceId)
 
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
@@ -123,7 +122,7 @@ break :: MonadError () m => m a
 break = throwError ()
 
 f :: Int -> String
-f = traceId . pure . toEnum
+f = pure . toEnum
 
 _decompressImpl :: (Length, ResetValue, GetNextValue) -> IO Decompressed
 _decompressImpl (length, resetValue, getNextValue) =
@@ -150,6 +149,8 @@ _decompressImpl (length, resetValue, getNextValue) =
     let
       w = f c
 
+    dump $ "w " <> w
+
     -- refs
     dictionaryRef <- newRef $ Map.fromList
       [ (0, f 0)
@@ -163,7 +164,6 @@ _decompressImpl (length, resetValue, getNextValue) =
     wRef <- newRef (w :: Decompressed)
     iRef <- newRef (0 :: Int)
     cRef <- newRef c
-    entryRef <- newRef ("" :: Decompressed)
 
     -- loop
     result <- execWriterT $ loop $ do
@@ -211,7 +211,8 @@ _decompressImpl (length, resetValue, getNextValue) =
               else
                 error "return null"
 
-      print entry
+      dump $ "entry " <> entry
+      error "exit early"
       tell entry
 
       dictSize <- incrementRef dictSizeRef
