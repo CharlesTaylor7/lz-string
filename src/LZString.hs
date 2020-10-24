@@ -7,7 +7,7 @@ import Prelude hiding (break, print, putStrLn)
 
 import GHC.Exts
 import Data.Function ((&))
-import Data.Foldable (foldlM)
+import Data.Foldable (foldlM, length)
 import Data.Word (Word8)
 import Data.Bits (Bits(..))
 import Data.IORef (IORef)
@@ -79,7 +79,7 @@ f :: Int -> String
 f = pure . toEnum
 
 _decompressImpl :: (Length, ResetValue, GetNextValue) -> IO Decompressed
-_decompressImpl (length, resetValue, getNextValue) =
+_decompressImpl (inputLength, resetValue, getNextValue) =
   let
     getBits' :: MonadState DataStruct m => Int -> m Int
     getBits' = getBits resetValue getNextValue
@@ -107,7 +107,6 @@ _decompressImpl (length, resetValue, getNextValue) =
     dictionaryRef <- newRef $
       (fromList [ f 0, f 1, f 2, w] :: Seq String)
     enlargeInRef <- newRef (4 :: Int)
-    dictSizeRef <- newRef (4 :: Int)
     numBitsRef <- newRef (3 :: Int)
     wRef <- newRef (w :: Decompressed)
     cRef <- newRef c
@@ -115,7 +114,7 @@ _decompressImpl (length, resetValue, getNextValue) =
     -- loop
     result <- execWriterT $ loop $ do
       data_index <- gets _index
-      when (data_index > length) $
+      when (data_index > inputLength) $
         break
 
       numBits <- readRef numBitsRef
@@ -134,19 +133,19 @@ _decompressImpl (length, resetValue, getNextValue) =
         let exponent = (bits + 1) * 8
 
         bits <- getBits' exponent
-        dictSize <- incrementRef dictSizeRef
         modifyRef dictionaryRef $
           (Seq.|> (f bits))
 
+        dictSize <- length <$> readRef dictionaryRef
         -- Line 457 in lz-string.js
-        writeRef cRef $ dictSize
+        writeRef cRef $ dictSize - 1
 
         tickEnlargeIn enlargeInRef numBitsRef
 
       -- line 469
       c <- readRef cRef
-      dictSize <- readRef dictSizeRef
       dictionary <- readRef dictionaryRef
+      let dictSize = length dictionary
       w <- readRef wRef
       entry <- do
         case dictionary Seq.!? c of
@@ -161,7 +160,6 @@ _decompressImpl (length, resetValue, getNextValue) =
 
       tell entry
 
-      dictSize <- incrementRef dictSizeRef
       modifyRef dictionaryRef $
         (Seq.|> (w <> [entry !! 0]))
 
