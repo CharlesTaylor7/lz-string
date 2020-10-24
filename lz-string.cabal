@@ -47,3 +47,19 @@ executable lz
   build-depends:
       base64-bytestring
     , lib
+
+
+Test-Suite test
+  import:
+    common
+  type:
+    exitcode-stdio-1.0
+  hs-source-dirs:
+    test
+  main-is:
+    Spec.hs
+  build-depends:
+      base
+    , hspec
+    , QuickCheck
+    , lib
