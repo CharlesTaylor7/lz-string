@@ -10,12 +10,7 @@
 var LZString = (function() {
 
 // private property
-var f = function (n) {
-  c = String.fromCharCode(n)
-  console.log(c)
-  return c
-}
-
+var f = String.fromCharCode
 var keyStrBase64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
 var keyStrUriSafe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-$";
 var baseReverseDic = {};
@@ -480,6 +475,7 @@ var LZString = {
           return null;
         }
       }
+      console.log(entry)
       result.push(entry);
 
       // Add w+entry[0] to the dictionary.

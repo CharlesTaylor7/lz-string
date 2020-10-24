@@ -6,7 +6,9 @@ module LZString
   -- (decompressBase64)
   where
 
-import Prelude hiding (break)
+import Prelude hiding (break, print, putStrLn)
+import qualified Prelude
+
 import Data.Function ((&), on)
 import Data.Traversable (for)
 import Data.Foldable (foldlM)
@@ -35,6 +37,11 @@ import qualified Data.IntMap as Map
 import Data.Array (Array)
 import qualified Data.Array as Array
 
+print :: (Show a, MonadIO m) => a -> m ()
+print = liftIO . Prelude.print
+
+dump :: MonadIO m => String -> m ()
+dump = liftIO . Prelude.putStrLn
 
 keyStrBase64 :: Array Int Char
 keyStrBase64 = Array.listArray (0,63) "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
@@ -204,6 +211,7 @@ _decompressImpl (length, resetValue, getNextValue) =
               else
                 error "return null"
 
+      print entry
       tell entry
 
       dictSize <- incrementRef dictSizeRef
