@@ -109,7 +109,6 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
     enlargeInRef <- newRef (4 :: Int)
     numBitsRef <- newRef (3 :: Int)
     wRef <- newRef (w :: Decompressed)
-    cRef <- newRef c
 
     execWriterT $ do
       tell w
@@ -122,16 +121,13 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
         numBits <- readRef numBitsRef
         bits <- getBits' numBits
 
-        -- assignment in switch case of line 423
-        writeRef cRef bits
-
         -- switch case 2
         when (bits == 2) $
           break
 
         -- switch case 0, 1
         -- line 423
-        when (bits < 2) $ do
+        c <- if bits > 2 then pure bits else do
           let exponent = (bits + 1) * 8
 
           bits <- getBits' exponent
@@ -140,12 +136,12 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
 
           dictSize <- length <$> readRef dictionaryRef
           -- Line 457 in lz-string.js
-          writeRef cRef $ dictSize - 1
 
           tickEnlargeIn enlargeInRef numBitsRef
 
+          pure $ dictSize - 1
+
         -- line 469
-        c <- readRef cRef
         dictionary <- readRef dictionaryRef
         let dictSize = length dictionary
         w <- readRef wRef
