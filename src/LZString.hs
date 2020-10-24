@@ -18,12 +18,13 @@ import Control.Monad.Writer.Strict (execWriterT, tell)
 
 import System.IO.Unsafe (unsafePerformIO)
 
-import qualified Data.Text.Lazy.Builder as TextBuilder
-
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 
-import Data.Sequence (Seq)
+import qualified Data.ByteString.Builder as L
+import qualified Data.ByteString.Lazy as L
+
+import Data.Sequence (Seq (..))
 import qualified Data.Sequence as Seq
 
 import Data.IntMap (IntMap)
@@ -34,7 +35,6 @@ import qualified Data.Array as Array
 
 import Utils
 
-type TextBuilder = TextBuilder.Builder
 
 keyStrBase64 :: Array Int Char
 keyStrBase64 = Array.listArray (0,63) "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
@@ -63,7 +63,9 @@ decompressBase64 input = _decompress(BS.length input, 32, getNextValue)
 type Length = Int
 type ResetValue = Int
 type GetNextValue = Int -> Int
-type Decompressed = String
+type Decompressed = L.ByteString
+type Builder = L.Builder
+type EntryType = Seq Char
 
 data DataStruct = DataStruct
   { _val :: Int
@@ -72,13 +74,17 @@ data DataStruct = DataStruct
   }
 
 _decompress :: (Length, ResetValue, GetNextValue) -> Decompressed
-_decompress args = unsafePerformIO $ _decompressImpl args
+_decompress args = L.toLazyByteString $ unsafePerformIO $ _decompressImpl args
 {-# NOINLINE _decompress #-}
 
-f :: Int -> String
+f :: Int -> Seq Char
 f = pure . toEnum
 
-_decompressImpl :: (Length, ResetValue, GetNextValue) -> IO Decompressed
+unsafeHead :: Seq a -> a
+unsafeHead (h :<| _) = h
+
+
+_decompressImpl :: (Length, ResetValue, GetNextValue) -> IO Builder
 _decompressImpl (inputLength, resetValue, getNextValue) =
   let
     getBits' :: MonadState DataStruct m => Int -> m Int
@@ -100,18 +106,17 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
           1 -> 16
           n -> error $ "bits == " <> show n
     c <- getBits' exponent
-    let
-      w = f c
+    let w = f c
 
     -- refs
     dictionaryRef <- newRef $
-      (fromList [ f 0, f 1, f 2, w] :: Seq String)
+      (fromList [ f 0, f 1, f 2, w] :: Seq EntryType)
     enlargeInRef <- newRef (4 :: Int)
     numBitsRef <- newRef (3 :: Int)
-    wRef <- newRef (w :: Decompressed)
+    wRef <- newRef (w :: EntryType)
 
     execWriterT $ do
-      tell w
+      tell $ toBytes w
       -- loop
       loop $ do
         data_index <- gets _index
@@ -131,8 +136,7 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
           let exponent = (bits + 1) * 8
 
           bits <- getBits' exponent
-          modifyRef dictionaryRef $
-            (Seq.|> (f bits))
+          modifyRef dictionaryRef $ (:|> (f bits))
 
           dictSize <- length <$> readRef dictionaryRef
           -- Line 457 in lz-string.js
@@ -145,25 +149,25 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
         dictionary <- readRef dictionaryRef
         let dictSize = length dictionary
         w <- readRef wRef
-        entry <- do
-          case dictionary Seq.!? c of
-            Just val -> do
-              pure val
-            Nothing ->
-              if c == dictSize
-              then do
-                pure $ w <> [(w !! 0)]
-              else
-                error "return null"
+        let
+          entry =
+            if c == dictSize
+            then w :|> (unsafeHead w)
+            else
+              case dictionary Seq.!? c of
+                Just val -> val
+                Nothing -> error "return null"
 
         modifyRef dictionaryRef $
-          (Seq.|> (w <> [entry !! 0]))
+          (:|> (w :|> unsafeHead entry))
 
         writeRef wRef entry
         tickEnlargeIn enlargeInRef numBitsRef
 
-        tell entry
+        tell $ toBytes entry
 
+toBytes :: Seq Char -> Builder
+toBytes = L.stringUtf8 . toList
 
 tickEnlargeIn :: MonadIO m => IORef Int -> IORef Int -> m ()
 tickEnlargeIn enlargeInRef numBitsRef = do
