@@ -25,6 +25,7 @@ common common
   ghc-options:
     -Wall
     -Wno-name-shadowing
+    -O2
   build-depends:
       base >= 4.13 && < 5.0
     , bytestring >= 0.10 && < 1.0

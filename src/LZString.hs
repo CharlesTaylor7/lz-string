@@ -66,11 +66,24 @@ type GetNextValue = Int -> Int
 type Decompressed = L.ByteString
 type Builder = L.Builder
 type EntryType = Seq Char
+type Dictionary = Seq EntryType
+
+data DecompressionState = DecompressionState
+  { _dataStruct :: !DataStruct
+  , _bitCounter :: !BitCounter
+  , _dictionary :: !Dictionary
+  , _word       :: !EntryType
+  }
 
 data DataStruct = DataStruct
-  { _val :: Int
-  , _position :: Int
-  , _index :: Int
+  { _value    :: !Int
+  , _position :: !Int
+  , _index    :: !Int
+  }
+
+data BitCounter = BitCounter
+  { _enlargeIn :: Int
+  , _numBits :: Int
   }
 
 _decompress :: (Length, ResetValue, GetNextValue) -> Decompressed
@@ -91,9 +104,9 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
     getBits' = getBits resetValue getNextValue
 
     dataStruct = DataStruct
-      { _val = getNextValue 0
+      { _value    = getNextValue 0
       , _position = resetValue
-      , _index = 1
+      , _index    = 1
       }
   in flip evalStateT dataStruct $ do
 
@@ -111,8 +124,7 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
     -- refs
     dictionaryRef <- newRef $
       (fromList [ f 0, f 1, f 2, w] :: Seq EntryType)
-    enlargeInRef <- newRef (4 :: Int)
-    numBitsRef <- newRef (3 :: Int)
+    bitCounterRef <- newRef (BitCounter 4 3)
     wRef <- newRef (w :: EntryType)
 
     execWriterT $ do
@@ -123,7 +135,7 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
         when (data_index > inputLength) $
           break
 
-        numBits <- readRef numBitsRef
+        numBits <- _numBits <$> readRef bitCounterRef
         bits <- getBits' numBits
 
         -- switch case 2
@@ -133,6 +145,8 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
         -- switch case 0, 1
         -- line 423
         c <- if bits > 2 then pure bits else do
+          modifyRef bitCounterRef tick
+
           let exponent = (bits + 1) * 8
 
           bits <- getBits' exponent
@@ -141,7 +155,6 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
           dictSize <- length <$> readRef dictionaryRef
           -- Line 457 in lz-string.js
 
-          tickEnlargeIn enlargeInRef numBitsRef
 
           pure $ dictSize - 1
 
@@ -162,21 +175,20 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
           (:|> (w :|> unsafeHead entry))
 
         writeRef wRef entry
-        tickEnlargeIn enlargeInRef numBitsRef
+        modifyRef bitCounterRef tick
 
         tell $ toBytes entry
 
 toBytes :: Seq Char -> Builder
 toBytes = L.stringUtf8 . toList
 
-tickEnlargeIn :: MonadIO m => IORef Int -> IORef Int -> m ()
-tickEnlargeIn enlargeInRef numBitsRef = do
-  enlargeIn <- decrementRef enlargeInRef
 
-  when (enlargeIn == 1) $ do
-    numBits <- incrementRef numBitsRef
-    writeRef enlargeInRef $ (1 `shiftL` numBits)
-
+tick :: BitCounter -> BitCounter
+tick (BitCounter e n) = do
+  let e' = e - 1
+  if e' > 0
+  then BitCounter e' n
+  else BitCounter (1 `shiftL` n) (n + 1)
 
 type Exponent = Int
 
