@@ -13,8 +13,6 @@ main = do
   handle <- openFile "../generals-bot/replays/rtQyMFIwv.gior" ReadMode
   contents <- Base64.encode <$> BS.hGetContents handle
 
-  let decompressed = LZ.decompressBase64 contents
-
-  print $ BS.length contents
-  print $ length decompressed
-  print $ decompressed `seq` ()
+  contents `seq` defaultMain
+    [ bench "decompress" $ nf LZ.decompressBase64 contents
+    ]

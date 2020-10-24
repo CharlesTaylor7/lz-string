@@ -24,6 +24,8 @@ import Control.Monad.Writer.Strict (MonadWriter, WriterT, execWriterT, tell)
 
 import System.IO.Unsafe (unsafePerformIO)
 
+import qualified Data.Text.Lazy.Builder as TextBuilder
+
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString as BS
@@ -35,6 +37,10 @@ import qualified Data.IntMap as Map
 
 import Data.Array (Array)
 import qualified Data.Array as Array
+
+
+import Utils
+type TextBuilder = TextBuilder.Builder
 
 print :: (Show a, MonadIO m) => a -> m ()
 print = liftIO . Prelude.print
@@ -156,8 +162,6 @@ _decompressImpl (length, resetValue, getNextValue) =
       , (2, f 2)
       , (3, w)
       ]
-    lookupsRef <- newRef (0 :: Int)
-
     enlargeInRef <- newRef (4 :: Int)
     dictSizeRef <- newRef (4 :: Int)
     numBitsRef <- newRef (3 :: Int)
@@ -203,7 +207,6 @@ _decompressImpl (length, resetValue, getNextValue) =
       entry <- do
         case dictionary Map.!? c of
           Just val -> do
-            incrementRef lookupsRef
             pure val
           Nothing ->
             if c == dictSize
@@ -221,7 +224,6 @@ _decompressImpl (length, resetValue, getNextValue) =
       writeRef wRef entry
       tickEnlargeIn enlargeInRef numBitsRef
 
-    readRef lookupsRef >>= print
     -- prepend initial word & return
     pure $ w <> result
 

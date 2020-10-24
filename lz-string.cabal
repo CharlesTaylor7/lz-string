@@ -37,6 +37,7 @@ library lib
       containers
     , array
     , mtl
+    , text
 
 
 benchmark parse-replay
