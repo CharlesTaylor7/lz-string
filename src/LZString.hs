@@ -73,17 +73,22 @@ _decompress :: (Length, ResetValue, GetNextValue) -> Decompressed
 _decompress args = toLazyByteString $ unsafePerformIO $ _decompressImpl args
 {-# NOINLINE _decompress #-}
 
-f :: Int -> Seq Char
+type EntryType = String
+f :: Int -> EntryType
 f = pure . toEnum
 
-toBytes :: Seq Char -> Builder
-toBytes = stringUtf8 . toList
+toBytes :: EntryType -> Builder
+toBytes = stringUtf8
 
-pushBytes :: MonadWriter Builder m => Seq Char -> m ()
+pushBytes :: MonadWriter Builder m => EntryType -> m ()
 pushBytes = tell . toBytes
 
-unsafeHead :: Seq a -> a
-unsafeHead (h Seq.:<| _) = h
+unsafeHead :: EntryType -> Char
+unsafeHead = head
+-- unsafeHead (h Seq.:<| _) = h
+
+snoc :: EntryType -> Char -> EntryType
+snoc word c = word <> [c]
 
 _decompressImpl :: (Length, ResetValue, GetNextValue) -> IO Builder
 _decompressImpl (length, resetValue, getNextValue) =
@@ -118,7 +123,7 @@ _decompressImpl (length, resetValue, getNextValue) =
     enlargeInRef <- newRef (4 :: Int)
     dictSizeRef <- newRef (4 :: Int)
     numBitsRef <- newRef (3 :: Int)
-    wRef <- newRef (w :: Seq Char)
+    wRef <- newRef (w :: EntryType)
     cRef <- newRef undefined
 
     -- loop
@@ -166,7 +171,7 @@ _decompressImpl (length, resetValue, getNextValue) =
           Nothing ->
             if c == dictSize
             then do
-              pure $ w Seq.|> (unsafeHead w)
+              pure $ w `snoc` (unsafeHead w)
             else
               error "return null"
 
@@ -174,7 +179,7 @@ _decompressImpl (length, resetValue, getNextValue) =
 
       dictSize <- incrementRef dictSizeRef
       modifyRef dictionaryRef $
-        Map.insert dictSize (w Seq.|> (unsafeHead entry))
+        Map.insert dictSize (w `snoc` (unsafeHead entry))
 
       writeRef wRef entry
       tickEnlargeIn enlargeInRef numBitsRef
