@@ -31,6 +31,8 @@ library lib
     common
   exposed-modules:
     LZString
+  other-modules:
+    Utils
   hs-source-dirs:
     src
   build-depends:

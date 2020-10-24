@@ -38,15 +38,9 @@ import qualified Data.IntMap as Map
 import Data.Array (Array)
 import qualified Data.Array as Array
 
-
 import Utils
+
 type TextBuilder = TextBuilder.Builder
-
-print :: (Show a, MonadIO m) => a -> m ()
-print = liftIO . Prelude.print
-
-dump :: MonadIO m => String -> m ()
-dump = liftIO . Prelude.putStrLn
 
 keyStrBase64 :: Array Int Char
 keyStrBase64 = Array.listArray (0,63) "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
@@ -83,49 +77,9 @@ data DataStruct = DataStruct
   , _index :: Int
   }
 
-
 _decompress :: (Length, ResetValue, GetNextValue) -> Decompressed
 _decompress args = unsafePerformIO $ _decompressImpl args
 {-# NOINLINE _decompress #-}
-
-newRef :: MonadIO m => a -> m (IORef a)
-newRef = liftIO . newIORef
-
-readRef :: MonadIO m => IORef a -> m a
-readRef = liftIO . readIORef
-
-writeRef :: MonadIO m => IORef a  -> a -> m ()
-writeRef = (liftIO .) . writeIORef
-
-modifyRef :: MonadIO m => IORef a -> (a -> a) -> m ()
-modifyRef = (liftIO .) . modifyIORef'
-
--- | C-style language postfix ++ operator
--- increment the ref, but return the old value
-incrementRef :: MonadIO m => IORef Int -> m Int
-incrementRef ref = liftIO $ do
-  i <- readIORef ref
-  writeIORef ref $ i + 1
-  pure i
-
--- | C-style language postfix -- operator
--- decrement the ref, but return the old value
-decrementRef :: MonadIO m => IORef Int -> m Int
-decrementRef ref = liftIO $ do
-  i <- readIORef ref
-  writeIORef ref $ i - 1
-  pure i
-
-loop :: forall e m. Monad m => ExceptT e m () -> m e
-loop act = do
-  result <- runExceptT act
-  case result of
-    Left e -> pure e
-    Right _ -> loop act
-
-
-break :: MonadError () m => m a
-break = throwError ()
 
 f :: Int -> String
 f = pure . toEnum

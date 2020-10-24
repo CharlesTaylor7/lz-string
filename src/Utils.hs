@@ -37,9 +37,6 @@ import Data.Array (Array)
 import qualified Data.Array as Array
 
 
-import Utils
-type TextBuilder = TextBuilder.Builder
-
 print :: (Show a, MonadIO m) => a -> m ()
 print = liftIO . Prelude.print
 
