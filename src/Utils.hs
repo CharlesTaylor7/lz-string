@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE PartialTypeSignatures #-}
 module Utils where
 
 import Prelude hiding (break, print, putStrLn)

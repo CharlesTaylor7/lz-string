@@ -6,32 +6,33 @@ module LZString (decompressBase64) where
 import Prelude hiding (break, print, putStrLn)
 
 import Data.Function ((&))
-import Data.Foldable (foldlM)
+import Data.Foldable (foldlM, toList)
 import Data.Word (Word8)
 import Data.Bits (Bits(..))
 import Data.IORef (IORef)
 import Control.Monad (when)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.State (MonadState, get, gets, put, evalStateT)
-import Control.Monad.Writer.Strict (execWriterT, tell)
+import Control.Monad.Writer.Strict (MonadWriter, execWriterT, tell)
 
 import System.IO.Unsafe (unsafePerformIO)
 
-import qualified Data.Text.Lazy.Builder as TextBuilder
-
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
+import Data.ByteString.Builder
+import qualified Data.ByteString as Strict
+import qualified Data.ByteString.Lazy as Lazy
 
 -- Use an Intmap to mimic a js array
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as Map
+
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
 
 import Data.Array (Array)
 import qualified Data.Array as Array
 
 import Utils
 
-type TextBuilder = TextBuilder.Builder
 
 keyStrBase64 :: Array Int Char
 keyStrBase64 = Array.listArray (0,63) "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
@@ -47,20 +48,20 @@ getBaseValue :: Char -> Int
 getBaseValue = (reverseLookup Map.!) . fromEnum
 
 
-decompressBase64 :: ByteString -> Decompressed
-decompressBase64 input = _decompress(BS.length input, 32, getNextValue)
+decompressBase64 :: Strict.ByteString -> Decompressed
+decompressBase64 input = _decompress(Strict.length input, 32, getNextValue)
   where
     toChar :: Word8 -> Char
     toChar = toEnum . fromIntegral
 
     getNextValue :: Int -> Int
-    getNextValue = getBaseValue . toChar . (BS.index input)
+    getNextValue = getBaseValue . toChar . (Strict.index input)
 
 
 type Length = Int
 type ResetValue = Int
 type GetNextValue = Int -> Int
-type Decompressed = String
+type Decompressed = Lazy.ByteString
 
 data DataStruct = DataStruct
   { _val :: Int
@@ -69,13 +70,22 @@ data DataStruct = DataStruct
   }
 
 _decompress :: (Length, ResetValue, GetNextValue) -> Decompressed
-_decompress args = unsafePerformIO $ _decompressImpl args
+_decompress args = toLazyByteString $ unsafePerformIO $ _decompressImpl args
 {-# NOINLINE _decompress #-}
 
-f :: Int -> String
+f :: Int -> Seq Char
 f = pure . toEnum
 
-_decompressImpl :: (Length, ResetValue, GetNextValue) -> IO Decompressed
+toBytes :: Seq Char -> Builder
+toBytes = stringUtf8 . toList
+
+pushBytes :: MonadWriter Builder m => Seq Char -> m ()
+pushBytes = tell . toBytes
+
+unsafeHead :: Seq a -> a
+unsafeHead (h Seq.:<| _) = h
+
+_decompressImpl :: (Length, ResetValue, GetNextValue) -> IO Builder
 _decompressImpl (length, resetValue, getNextValue) =
   let
     getBits' :: MonadState DataStruct m => Int -> m Int
@@ -96,10 +106,8 @@ _decompressImpl (length, resetValue, getNextValue) =
           0 -> 8
           1 -> 16
           n -> error $ "bits == " <> show n
-    c <- getBits' exponent
-    let
-      w = f c
-
+    bits <- getBits' exponent
+    let w = f bits
     -- refs
     dictionaryRef <- newRef $ Map.fromList
       [ (0, f 0)
@@ -110,11 +118,13 @@ _decompressImpl (length, resetValue, getNextValue) =
     enlargeInRef <- newRef (4 :: Int)
     dictSizeRef <- newRef (4 :: Int)
     numBitsRef <- newRef (3 :: Int)
-    wRef <- newRef (w :: Decompressed)
-    cRef <- newRef c
+    wRef <- newRef (w :: Seq Char)
+    cRef <- newRef undefined
 
     -- loop
     result <- execWriterT $ loop $ do
+      pushBytes w
+
       data_index <- gets _index
       when (data_index > length) $
         break
@@ -156,21 +166,21 @@ _decompressImpl (length, resetValue, getNextValue) =
           Nothing ->
             if c == dictSize
             then do
-              pure $ w <> [(w !! 0)]
+              pure $ w Seq.|> (unsafeHead w)
             else
               error "return null"
 
-      tell entry
+      pushBytes entry
 
       dictSize <- incrementRef dictSizeRef
       modifyRef dictionaryRef $
-        Map.insert dictSize (w <> [entry !! 0])
+        Map.insert dictSize (w Seq.|> (unsafeHead entry))
 
       writeRef wRef entry
       tickEnlargeIn enlargeInRef numBitsRef
 
     -- prepend initial word & return
-    pure $ w <> result
+    pure $ result
 
 
 tickEnlargeIn :: MonadIO m => IORef Int -> IORef Int -> m ()
