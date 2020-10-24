@@ -7,7 +7,7 @@ import Prelude hiding (break, print, putStrLn)
 
 import GHC.Exts
 import Data.Function ((&))
-import Data.Foldable (foldlM, length)
+import Data.Foldable (foldlM)
 import Data.Word (Word8)
 import Data.Bits (Bits(..))
 import Data.IORef (IORef)
@@ -111,63 +111,62 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
     wRef <- newRef (w :: Decompressed)
     cRef <- newRef c
 
-    -- loop
-    result <- execWriterT $ loop $ do
-      data_index <- gets _index
-      when (data_index > inputLength) $
-        break
+    execWriterT $ do
+      tell w
+      -- loop
+      loop $ do
+        data_index <- gets _index
+        when (data_index > inputLength) $
+          break
 
-      numBits <- readRef numBitsRef
-      bits <- getBits' numBits
+        numBits <- readRef numBitsRef
+        bits <- getBits' numBits
 
-      -- assignment in switch case of line 423
-      writeRef cRef bits
+        -- assignment in switch case of line 423
+        writeRef cRef bits
 
-      -- switch case 2
-      when (bits == 2) $
-        break
+        -- switch case 2
+        when (bits == 2) $
+          break
 
-      -- switch case 0, 1
-      -- line 423
-      when (bits < 2) $ do
-        let exponent = (bits + 1) * 8
+        -- switch case 0, 1
+        -- line 423
+        when (bits < 2) $ do
+          let exponent = (bits + 1) * 8
 
-        bits <- getBits' exponent
+          bits <- getBits' exponent
+          modifyRef dictionaryRef $
+            (Seq.|> (f bits))
+
+          dictSize <- length <$> readRef dictionaryRef
+          -- Line 457 in lz-string.js
+          writeRef cRef $ dictSize - 1
+
+          tickEnlargeIn enlargeInRef numBitsRef
+
+        -- line 469
+        c <- readRef cRef
+        dictionary <- readRef dictionaryRef
+        let dictSize = length dictionary
+        w <- readRef wRef
+        entry <- do
+          case dictionary Seq.!? c of
+            Just val -> do
+              pure val
+            Nothing ->
+              if c == dictSize
+              then do
+                pure $ w <> [(w !! 0)]
+              else
+                error "return null"
+
+        tell entry
+
         modifyRef dictionaryRef $
-          (Seq.|> (f bits))
+          (Seq.|> (w <> [entry !! 0]))
 
-        dictSize <- length <$> readRef dictionaryRef
-        -- Line 457 in lz-string.js
-        writeRef cRef $ dictSize - 1
-
+        writeRef wRef entry
         tickEnlargeIn enlargeInRef numBitsRef
-
-      -- line 469
-      c <- readRef cRef
-      dictionary <- readRef dictionaryRef
-      let dictSize = length dictionary
-      w <- readRef wRef
-      entry <- do
-        case dictionary Seq.!? c of
-          Just val -> do
-            pure val
-          Nothing ->
-            if c == dictSize
-            then do
-              pure $ w <> [(w !! 0)]
-            else
-              error "return null"
-
-      tell entry
-
-      modifyRef dictionaryRef $
-        (Seq.|> (w <> [entry !! 0]))
-
-      writeRef wRef entry
-      tickEnlargeIn enlargeInRef numBitsRef
-
-    -- prepend initial word & return
-    pure $ w <> result
 
 
 tickEnlargeIn :: MonadIO m => IORef Int -> IORef Int -> m ()
