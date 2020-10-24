@@ -400,7 +400,6 @@ var LZString = {
     dictionary[3] = c;
     w = c;
     result.push(c);
-    console.log('w', w)
     while (true) {
       if (data.index > length) {
         return "";
@@ -469,17 +468,13 @@ var LZString = {
 
       if (dictionary[c]) {
         entry = dictionary[c];
-        console.log(`case 1 of ${entry}`)
       } else {
         if (c === dictSize) {
           entry = w + w.charAt(0);
-          console.log(`case 2: append ${w.charAt(0)}`)
         } else {
           return null;
         }
       }
-      console.log('entry', entry)
-      process.exit(1)
       result.push(entry);
 
       // Add w+entry[0] to the dictionary.

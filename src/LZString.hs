@@ -149,8 +149,6 @@ _decompressImpl (length, resetValue, getNextValue) =
     let
       w = f c
 
-    dump $ "w " <> w
-
     -- refs
     dictionaryRef <- newRef $ Map.fromList
       [ (0, f 0)
@@ -192,7 +190,7 @@ _decompressImpl (length, resetValue, getNextValue) =
           Map.insert dictSize (f bits)
 
         -- Line 457 in lz-string.js
-        writeRef cRef $ dictSize - 1
+        writeRef cRef $ dictSize
 
         tickEnlargeIn enlargeInRef numBitsRef
 
@@ -204,18 +202,14 @@ _decompressImpl (length, resetValue, getNextValue) =
       entry <- do
         case dictionary Map.!? c of
           Just val -> do
-            dump $ "case 1 of " <> val
             pure val
           Nothing ->
             if c == dictSize
             then do
-              dump $ "case 2: append " <> [w !! 0]
               pure $ w <> [(w !! 0)]
             else
               error "return null"
 
-      dump $ "entry " <> entry
-      error "exit early"
       tell entry
 
       dictSize <- incrementRef dictSizeRef

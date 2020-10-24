@@ -10,4 +10,4 @@ let base64 = fs.readFileSync(filePath, 'base64')
 const decompressed = LZString.decompressFromBase64(base64);
 
 // show your work
-console.log('()')
+console.log(decompressed)
