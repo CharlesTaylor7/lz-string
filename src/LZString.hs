@@ -4,36 +4,37 @@
 module LZString (decompressBase64) where
 
 import Prelude hiding (break, print, putStrLn)
-import GHC.Exts (IsList, fromList)
 
+import GHC.Exts
 import Data.Function ((&))
-import Data.Foldable (foldlM, toList)
+import Data.Foldable (foldlM)
 import Data.Word (Word8)
 import Data.Bits (Bits(..))
 import Data.IORef (IORef)
 import Control.Monad (when)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.State (MonadState, get, gets, put, evalStateT)
-import Control.Monad.Writer.Strict (MonadWriter, execWriterT, tell)
+import Control.Monad.Writer.Strict (execWriterT, tell)
 
 import System.IO.Unsafe (unsafePerformIO)
 
-import Data.ByteString.Builder
-import qualified Data.ByteString as Strict
-import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.Text.Lazy.Builder as TextBuilder
 
--- Use an Intmap to mimic a js array
-import Data.IntMap (IntMap)
-import qualified Data.IntMap as Map
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
+
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as Map
 
 import Data.Array (Array)
 import qualified Data.Array as Array
 
 import Utils
 
+type TextBuilder = TextBuilder.Builder
 
 keyStrBase64 :: Array Int Char
 keyStrBase64 = Array.listArray (0,63) "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
@@ -49,22 +50,20 @@ getBaseValue :: Char -> Int
 getBaseValue = (reverseLookup Map.!) . fromEnum
 
 
-decompressBase64 :: Strict.ByteString -> Decompressed
-decompressBase64 input = _decompress(Strict.length input, 32, getNextValue)
+decompressBase64 :: ByteString -> Decompressed
+decompressBase64 input = _decompress(BS.length input, 32, getNextValue)
   where
     toChar :: Word8 -> Char
     toChar = toEnum . fromIntegral
 
     getNextValue :: Int -> Int
-    getNextValue = getBaseValue . toChar . (Strict.index input)
+    getNextValue = getBaseValue . toChar . (BS.index input)
 
 
-type InputLength = Int
+type Length = Int
 type ResetValue = Int
 type GetNextValue = Int -> Int
-type Decompressed = Lazy.ByteString
-type EntryType = String
-type Dictionary = Seq EntryType
+type Decompressed = String
 
 data DataStruct = DataStruct
   { _val :: Int
@@ -72,31 +71,15 @@ data DataStruct = DataStruct
   , _index :: Int
   }
 
-_decompress :: (InputLength, ResetValue, GetNextValue) -> Decompressed
-_decompress args = toLazyByteString $ unsafePerformIO $ _decompressImpl args
+_decompress :: (Length, ResetValue, GetNextValue) -> Decompressed
+_decompress args = unsafePerformIO $ _decompressImpl args
 {-# NOINLINE _decompress #-}
 
-f :: Int -> EntryType
+f :: Int -> String
 f = pure . toEnum
 
-toBytes :: EntryType -> Builder
-toBytes = stringUtf8
-
-pushBytes :: MonadWriter Builder m => EntryType -> m ()
-pushBytes = tell . toBytes
-
-unsafeHead :: EntryType -> Char
-unsafeHead = head
--- unsafeHead (h Seq.:<| _) = h
-
-snoc :: EntryType -> Char -> EntryType
-snoc word c = word <> [c]
-
-push :: EntryType -> Dictionary -> Dictionary
-push = (Seq.<|)
-
-_decompressImpl :: (InputLength, ResetValue, GetNextValue) -> IO Builder
-_decompressImpl (inputLength, resetValue, getNextValue) =
+_decompressImpl :: (Length, ResetValue, GetNextValue) -> IO Decompressed
+_decompressImpl (length, resetValue, getNextValue) =
   let
     getBits' :: MonadState DataStruct m => Int -> m Int
     getBits' = getBits resetValue getNextValue
@@ -116,22 +99,23 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
           0 -> 8
           1 -> 16
           n -> error $ "bits == " <> show n
-    bits <- getBits' exponent
-    let w = f bits
+    c <- getBits' exponent
+    let
+      w = f c
+
     -- refs
     dictionaryRef <- newRef $
-      (fromList [ f 0, f 1, f 2, w ] :: Dictionary)
+      (fromList [ f 0, f 1, f 2, w] :: Seq String)
     enlargeInRef <- newRef (4 :: Int)
+    dictSizeRef <- newRef (4 :: Int)
     numBitsRef <- newRef (3 :: Int)
-    wRef <- newRef (w :: EntryType)
-    cRef <- newRef undefined
+    wRef <- newRef (w :: Decompressed)
+    cRef <- newRef c
 
     -- loop
     result <- execWriterT $ loop $ do
-      pushBytes w
-
       data_index <- gets _index
-      when (data_index > inputLength) $
+      when (data_index > length) $
         break
 
       numBits <- readRef numBitsRef
@@ -150,18 +134,19 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
         let exponent = (bits + 1) * 8
 
         bits <- getBits' exponent
-        modifyRef dictionaryRef $ push (f bits)
-        dictSize <- length <$> readRef dictionaryRef
+        dictSize <- incrementRef dictSizeRef
+        modifyRef dictionaryRef $
+          (Seq.|> (f bits))
 
         -- Line 457 in lz-string.js
-        writeRef cRef $ dictSize - 1
+        writeRef cRef $ dictSize
 
         tickEnlargeIn enlargeInRef numBitsRef
 
       -- line 469
       c <- readRef cRef
+      dictSize <- readRef dictSizeRef
       dictionary <- readRef dictionaryRef
-      let dictSize = length dictionary
       w <- readRef wRef
       entry <- do
         case dictionary Seq.!? c of
@@ -170,20 +155,21 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
           Nothing ->
             if c == dictSize
             then do
-              pure $ w `snoc` (unsafeHead w)
+              pure $ w <> [(w !! 0)]
             else
               error "return null"
 
-      pushBytes entry
+      tell entry
 
+      dictSize <- incrementRef dictSizeRef
       modifyRef dictionaryRef $
-        push (w `snoc` (unsafeHead entry))
+        (Seq.|> (w <> [entry !! 0]))
 
       writeRef wRef entry
       tickEnlargeIn enlargeInRef numBitsRef
 
     -- prepend initial word & return
-    pure $ result
+    pure $ w <> result
 
 
 tickEnlargeIn :: MonadIO m => IORef Int -> IORef Int -> m ()
