@@ -1,5 +1,7 @@
 module Main where
 
+import Criterion.Main
+
 import System.IO
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as Base64
@@ -13,4 +15,6 @@ main = do
 
   let decompressed = LZ.decompressBase64 contents
 
-  print $ decompressed
+  print $ BS.length contents
+  print $ length decompressed
+  print $ decompressed `seq` ()

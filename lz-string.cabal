@@ -39,17 +39,21 @@ library lib
     , mtl
 
 
-executable lz
+benchmark parse-replay
   import:
     common
+  type:
+    exitcode-stdio-1.0
+  hs-source-dirs:
+    bench
   main-is:
-    Main.hs
+    DecompressReplay.hs
   build-depends:
-      base64-bytestring
-    , lib
+      lib
+    , base64-bytestring
+    , criterion
 
-
-Test-Suite test
+test-suite test
   import:
     common
   type:

@@ -156,11 +156,12 @@ _decompressImpl (length, resetValue, getNextValue) =
       , (2, f 2)
       , (3, w)
       ]
+    lookupsRef <- newRef (0 :: Int)
+
     enlargeInRef <- newRef (4 :: Int)
     dictSizeRef <- newRef (4 :: Int)
     numBitsRef <- newRef (3 :: Int)
     wRef <- newRef (w :: Decompressed)
-    iRef <- newRef (0 :: Int)
     cRef <- newRef c
 
     -- loop
@@ -202,6 +203,7 @@ _decompressImpl (length, resetValue, getNextValue) =
       entry <- do
         case dictionary Map.!? c of
           Just val -> do
+            incrementRef lookupsRef
             pure val
           Nothing ->
             if c == dictSize
@@ -219,6 +221,7 @@ _decompressImpl (length, resetValue, getNextValue) =
       writeRef wRef entry
       tickEnlargeIn enlargeInRef numBitsRef
 
+    readRef lookupsRef >>= print
     -- prepend initial word & return
     pure $ w <> result
 
