@@ -1,35 +1,26 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE PartialTypeSignatures #-}
-module LZString
-  -- (decompressBase64)
-  where
+module LZString (decompressBase64) where
 
 import Prelude hiding (break, print, putStrLn)
-import qualified Prelude
 
-import Data.Function ((&), on)
-import Data.Traversable (for)
+import Data.Function ((&))
 import Data.Foldable (foldlM)
-import Data.Word (Word8, Word16)
+import Data.Word (Word8)
 import Data.Bits (Bits(..))
-import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
-import Control.Applicative (liftA2)
+import Data.IORef (IORef)
 import Control.Monad (when)
-import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.State (MonadState, StateT, get, gets, put, modify, evalStateT, lift)
-import Control.Monad.Except (MonadError, ExceptT, runExceptT, throwError)
-import Control.Monad.Writer.Strict (MonadWriter, WriterT, execWriterT, tell)
+import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.State (MonadState, get, gets, put, evalStateT)
+import Control.Monad.Writer.Strict (execWriterT, tell)
 
 import System.IO.Unsafe (unsafePerformIO)
 
 import qualified Data.Text.Lazy.Builder as TextBuilder
 
 import Data.ByteString (ByteString)
-import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BS_Char8
 
 -- Use an Intmap to mimic a js array
 import Data.IntMap (IntMap)
@@ -104,7 +95,7 @@ _decompressImpl (length, resetValue, getNextValue) =
         case bits of
           0 -> 8
           1 -> 16
-          2 -> error "bits == 2"
+          n -> error $ "bits == " <> show n
     c <- getBits' exponent
     let
       w = f c

@@ -24,6 +24,7 @@ common common
     Haskell2010
   ghc-options:
     -Wall
+    -Wno-name-shadowing
   build-depends:
       base >= 4.13 && < 5.0
     , bytestring >= 0.10 && < 1.0
