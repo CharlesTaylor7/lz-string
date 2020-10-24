@@ -201,15 +201,18 @@ _decompressImpl (length, resetValue, getNextValue) =
       dictSize <- readRef dictSizeRef
       dictionary <- readRef dictionaryRef
       w <- readRef wRef
-      let
-        entry =
-          case dictionary Map.!? c of
-            Just val -> val
-            Nothing ->
-              if c == dictSize
-              then w <> [(w !! 0)]
-              else
-                error "return null"
+      entry <- do
+        case dictionary Map.!? c of
+          Just val -> do
+            dump $ "case 1 of " <> val
+            pure val
+          Nothing ->
+            if c == dictSize
+            then do
+              dump $ "case 2: append " <> [w !! 0]
+              pure $ w <> [(w !! 0)]
+            else
+              error "return null"
 
       dump $ "entry " <> entry
       error "exit early"

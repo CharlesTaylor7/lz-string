@@ -469,9 +469,11 @@ var LZString = {
 
       if (dictionary[c]) {
         entry = dictionary[c];
+        console.log(`case 1 of ${entry}`)
       } else {
         if (c === dictSize) {
           entry = w + w.charAt(0);
+          console.log(`case 2: append ${w.charAt(0)}`)
         } else {
           return null;
         }
