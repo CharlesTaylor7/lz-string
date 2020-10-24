@@ -160,13 +160,13 @@ _decompressImpl (inputLength, resetValue, getNextValue) =
               else
                 error "return null"
 
-        tell entry
-
         modifyRef dictionaryRef $
           (Seq.|> (w <> [entry !! 0]))
 
         writeRef wRef entry
         tickEnlargeIn enlargeInRef numBitsRef
+
+        tell entry
 
 
 tickEnlargeIn :: MonadIO m => IORef Int -> IORef Int -> m ()
