@@ -4,6 +4,7 @@
 module LZString (decompressBase64) where
 
 import Prelude hiding (break, print, putStrLn)
+import GHC.Exts (IsList, fromList)
 
 import Data.Function ((&))
 import Data.Foldable (foldlM, toList)
@@ -58,10 +59,12 @@ decompressBase64 input = _decompress(Strict.length input, 32, getNextValue)
     getNextValue = getBaseValue . toChar . (Strict.index input)
 
 
-type Length = Int
+type InputLength = Int
 type ResetValue = Int
 type GetNextValue = Int -> Int
 type Decompressed = Lazy.ByteString
+type EntryType = String
+type Dictionary = Seq EntryType
 
 data DataStruct = DataStruct
   { _val :: Int
@@ -69,11 +72,10 @@ data DataStruct = DataStruct
   , _index :: Int
   }
 
-_decompress :: (Length, ResetValue, GetNextValue) -> Decompressed
+_decompress :: (InputLength, ResetValue, GetNextValue) -> Decompressed
 _decompress args = toLazyByteString $ unsafePerformIO $ _decompressImpl args
 {-# NOINLINE _decompress #-}
 
-type EntryType = String
 f :: Int -> EntryType
 f = pure . toEnum
 
@@ -90,8 +92,11 @@ unsafeHead = head
 snoc :: EntryType -> Char -> EntryType
 snoc word c = word <> [c]
 
-_decompressImpl :: (Length, ResetValue, GetNextValue) -> IO Builder
-_decompressImpl (length, resetValue, getNextValue) =
+push :: EntryType -> Dictionary -> Dictionary
+push = (Seq.<|)
+
+_decompressImpl :: (InputLength, ResetValue, GetNextValue) -> IO Builder
+_decompressImpl (inputLength, resetValue, getNextValue) =
   let
     getBits' :: MonadState DataStruct m => Int -> m Int
     getBits' = getBits resetValue getNextValue
@@ -114,14 +119,9 @@ _decompressImpl (length, resetValue, getNextValue) =
     bits <- getBits' exponent
     let w = f bits
     -- refs
-    dictionaryRef <- newRef $ Map.fromList
-      [ (0, f 0)
-      , (1, f 1)
-      , (2, f 2)
-      , (3, w)
-      ]
+    dictionaryRef <- newRef $
+      (fromList [ f 0, f 1, f 2, w ] :: Dictionary)
     enlargeInRef <- newRef (4 :: Int)
-    dictSizeRef <- newRef (4 :: Int)
     numBitsRef <- newRef (3 :: Int)
     wRef <- newRef (w :: EntryType)
     cRef <- newRef undefined
@@ -131,7 +131,7 @@ _decompressImpl (length, resetValue, getNextValue) =
       pushBytes w
 
       data_index <- gets _index
-      when (data_index > length) $
+      when (data_index > inputLength) $
         break
 
       numBits <- readRef numBitsRef
@@ -150,22 +150,21 @@ _decompressImpl (length, resetValue, getNextValue) =
         let exponent = (bits + 1) * 8
 
         bits <- getBits' exponent
-        dictSize <- incrementRef dictSizeRef
-        modifyRef dictionaryRef $
-          Map.insert dictSize (f bits)
+        modifyRef dictionaryRef $ push (f bits)
+        dictSize <- length <$> readRef dictionaryRef
 
         -- Line 457 in lz-string.js
-        writeRef cRef $ dictSize
+        writeRef cRef $ dictSize - 1
 
         tickEnlargeIn enlargeInRef numBitsRef
 
       -- line 469
       c <- readRef cRef
-      dictSize <- readRef dictSizeRef
       dictionary <- readRef dictionaryRef
+      let dictSize = length dictionary
       w <- readRef wRef
       entry <- do
-        case dictionary Map.!? c of
+        case dictionary Seq.!? c of
           Just val -> do
             pure val
           Nothing ->
@@ -177,9 +176,8 @@ _decompressImpl (length, resetValue, getNextValue) =
 
       pushBytes entry
 
-      dictSize <- incrementRef dictSizeRef
       modifyRef dictionaryRef $
-        Map.insert dictSize (w `snoc` (unsafeHead entry))
+        push (w `snoc` (unsafeHead entry))
 
       writeRef wRef entry
       tickEnlargeIn enlargeInRef numBitsRef
